@@ -3,13 +3,17 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Product Scraper API - scrapes e-commerce product data and exports to CSV
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: scrape
+    description: Scraping job operations
+  - name: products
+    description: Product data operations
 paths:
   /healthz:
     get:
@@ -24,6 +28,173 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /scrape:
+    post:
+      operationId: startScrapeJob
+      tags: [scrape]
+      summary: Start a scrape job
+      description: Starts scraping books.toscrape.com and stores results
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScrapeJobInput"
+      responses:
+        "201":
+          description: Job started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeJob"
+        "400":
+          description: Invalid input
+
+  /scrape/jobs:
+    get:
+      operationId: listScrapeJobs
+      tags: [scrape]
+      summary: List all scrape jobs
+      responses:
+        "200":
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScrapeJob"
+
+  /scrape/jobs/{jobId}:
+    get:
+      operationId: getScrapeJob
+      tags: [scrape]
+      summary: Get a scrape job by ID
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeJob"
+        "404":
+          description: Job not found
+
+  /products:
+    get:
+      operationId: listProducts
+      tags: [products]
+      summary: List scraped products
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: category
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: minRating
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: maxPrice
+          in: query
+          schema:
+            type: ["number", "null"]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [price_asc, price_desc, rating_desc, title_asc]
+            default: title_asc
+        - name: search
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: Paginated product list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+
+    delete:
+      operationId: clearProducts
+      tags: [products]
+      summary: Delete all scraped products
+      responses:
+        "200":
+          description: Products cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClearResult"
+
+  /products/stats:
+    get:
+      operationId: getProductStats
+      tags: [products]
+      summary: Get aggregate statistics about scraped products
+      responses:
+        "200":
+          description: Product statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductStats"
+
+  /products/categories:
+    get:
+      operationId: listCategories
+      tags: [products]
+      summary: List all product categories
+      responses:
+        "200":
+          description: Category list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryCount"
+
+  /products/export:
+    get:
+      operationId: exportProductsCsv
+      tags: [products]
+      summary: Export products as CSV
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: minRating
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +205,125 @@ components:
       required:
         - status
 
+    ScrapeJobInput:
+      type: object
+      required: [pages]
+      properties:
+        pages:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: Number of pages to scrape (each page has ~20 books)
+        category:
+          type: ["string", "null"]
+          description: Optional category slug to filter scraping
+
+    ScrapeJob:
+      type: object
+      required: [id, status, pagesRequested, startedAt]
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        pagesRequested:
+          type: integer
+        pagesScraped:
+          type: integer
+        productsFound:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+        error:
+          type: ["string", "null"]
+
+    Product:
+      type: object
+      required: [id, title, price, rating, availability, category, url, scrapedAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        price:
+          type: number
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        availability:
+          type: string
+        category:
+          type: string
+        url:
+          type: string
+        scrapedAt:
+          type: string
+          format: date-time
+        jobId:
+          type: ["integer", "null"]
+
+    ProductListResponse:
+      type: object
+      required: [products, total, page, limit]
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    ProductStats:
+      type: object
+      required: [totalProducts, avgPrice, avgRating, totalCategories, byRating, lastScrapedAt]
+      properties:
+        totalProducts:
+          type: integer
+        avgPrice:
+          type: number
+        avgRating:
+          type: number
+        totalCategories:
+          type: integer
+        byRating:
+          type: array
+          items:
+            $ref: "#/components/schemas/RatingCount"
+        lastScrapedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    RatingCount:
+      type: object
+      required: [rating, count]
+      properties:
+        rating:
+          type: integer
+        count:
+          type: integer
+
+    CategoryCount:
+      type: object
+      required: [category, count]
+      properties:
+        category:
+          type: string
+        count:
+          type: integer
+
+    ClearResult:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: integer

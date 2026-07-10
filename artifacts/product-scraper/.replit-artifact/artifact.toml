@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Product Scraper"
+version = "1.0.0"
+id = "artifacts/product-scraper"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20952
+
+[services.development]
+run = "pnpm --filter @workspace/product-scraper run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/product-scraper", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/product-scraper/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20952"
+BASE_PATH = "/"
